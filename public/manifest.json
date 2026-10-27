@@ -1,0 +1,21 @@
+{
+  "name": "OpenPOS — Offline-First PWA POS",
+  "short_name": "OpenPOS",
+  "description": "Tablet-optimized offline-first Point-of-Sale (POS) & Micro-ERP system for F&B businesses with Web Bluetooth printing and offline IndexedDB sync.",
+  "start_url": "/login",
+  "display": "standalone",
+  "background_color": "#eff1f5",
+  "theme_color": "#7287fd",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml"
+    }
+  ]
+}
