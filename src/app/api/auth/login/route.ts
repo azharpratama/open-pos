@@ -34,11 +34,15 @@ export async function POST(request: Request) {
     as === "OWNER" || as === "KASIR" ? (as as "OWNER" | "KASIR") : null;
 
   try {
+    const demoForcedOff =
+      process.env.DEMO_MODE === "false" ||
+      process.env.NEXT_PUBLIC_DEMO_MODE === "false";
     const isDemo =
-      process.env.DEMO_MODE === "true" ||
-      process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
-      process.env.VERCEL === "1" ||
-      !process.env.DATABASE_URL;
+      !demoForcedOff &&
+      (process.env.DEMO_MODE === "true" ||
+        process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
+        process.env.VERCEL === "1" ||
+        !process.env.DATABASE_URL);
 
     if (isDemo) {
       const cleanEmail = email.trim().toLowerCase();

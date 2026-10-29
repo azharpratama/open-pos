@@ -17,6 +17,8 @@ export function isDemoMode(): boolean {
       !process.env.DATABASE_URL
     );
   }
+  const forced = process.env.NEXT_PUBLIC_DEMO_MODE;
+  if (forced === "false") return false;
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get("demo") === "true") {
     window.localStorage.setItem(DEMO_FLAG_KEY, "true");

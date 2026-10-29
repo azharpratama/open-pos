@@ -11,8 +11,8 @@
 [![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-C5F74F?style=for-the-badge&logo=drizzle&logoColor=black)](https://orm.drizzle.team/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Tailwind CSS v4](https://img.shields.io/badge/Tailwind_CSS_v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-293_Tests_Passing-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
-[![Playwright](https://img.shields.io/badge/Playwright-28_E2E_Tests-45BA4B?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-295_Tests_Passing-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-34_E2E_Tests-45BA4B?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
 
 [Live Demo](#live-demo) • [Screenshots](#screenshots) • [Features](#key-features) • [Case Study](#case-study-production-deployment) • [Architecture](#system-architecture) • [Security & Database](#security--database-architecture) • [Quickstart](#quickstart--local-development) • [Operational Guide](#panduan-operasional)
 
@@ -22,11 +22,11 @@
 
 ## Live Demo
 
-A public demonstration deployment on Vercel is being prepared:
+**[https://open-pos-seven.vercel.app](https://open-pos-seven.vercel.app)** — runs against an in-browser sandbox dataset, so no backend or credentials are needed.
 
-- **Demo URL:** Coming Soon (Vercel deployment in progress)
 - **Owner Demo:** `owner@openpos.dev` (Password: `password123`)
 - **Cashier Demo:** `kasir@openpos.dev` (Password: `password123`)
+- **Reset sandbox:** the header bar has a "Reset Demo" action that restores the seeded state.
 
 ---
 
@@ -155,7 +155,7 @@ OpenPOS implements zero-trust authorization powered by PostgreSQL **Row-Level Se
 | Notifications | Sonner | Minimalist toast notifications |
 | Offline Storage | idb-keyval | IndexedDB queue wrapper for offline orders |
 | Hardware Print | Web Bluetooth + ESC/POS | Raw ESC/POS generation directly over Bluetooth GATT |
-| Unit Testing | Vitest | 272 passing unit & integration tests |
+| Unit Testing | Vitest | 295 passing unit & integration tests |
 | E2E Testing | Playwright | 28 automated browser scenarios |
 
 ---
@@ -163,7 +163,7 @@ OpenPOS implements zero-trust authorization powered by PostgreSQL **Row-Level Se
 ## Testing & Verification
 
 ```bash
-# Run unit & integration test suite (272 tests)
+# Run unit & integration test suite (295 tests)
 npm test
 
 # Run Playwright end-to-end browser tests (28 scenarios)
@@ -177,7 +177,7 @@ npm run test:e2e:ui
 
 | Suite | Scope | Status |
 |---|---|---|
-| Unit & Integration (Vitest) | 272 tests | 100% passing |
+| Unit & Integration (Vitest) | 295 tests | 100% passing |
 | End-to-End (Playwright) | 28 scenarios | 100% passing |
 
 ---
@@ -220,6 +220,8 @@ npm run db:migrate
 # Seed development data
 npm run seed
 ```
+
+> **Demo mode:** with no `DATABASE_URL`, or on any `*.vercel.app` host, the app serves an in-browser sandbox dataset instead of the database. Set `DEMO_MODE=false` to force the real database on Vercel.
 
 ### 4. Run Development Server
 ```bash
