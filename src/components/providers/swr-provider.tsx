@@ -42,10 +42,16 @@ export function localStorageProvider() {
   return proxy as Map<string, any>;
 }
 
+// Installed at module scope: SWR fetches fire on mount, so anything later
+// (a parent useEffect, or render order) is already too late and the request
+// leaves for the real server.
+if (typeof window !== "undefined") {
+  setupDemoInterceptor();
+}
+
 export function SWRProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setupDemoInterceptor();
     return setupOnlineSync();
   }, []);
 

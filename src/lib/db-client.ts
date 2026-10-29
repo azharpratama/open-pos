@@ -9,6 +9,20 @@ export interface QueryResult<T = DbRow[]> {
   error: { message: string; code?: string } | null;
 }
 
+// A stopped local Postgres surfaces as a raw TCP error, which reads like an app
+// bug in the UI. Say what to do instead.
+export function describeDbError(err: any): { message: string; code?: string } {
+  const message = err?.message || String(err);
+  if ((err?.code === "ECONNREFUSED" || message.includes("ECONNREFUSED")) && message.includes("5432")) {
+    return {
+      message:
+        "Database lokal belum berjalan di port 5432. Jalankan `brew services start postgresql@18`, atau set DEMO_MODE=true untuk memakai sandbox.",
+      code: err?.code,
+    };
+  }
+  return { message, code: err?.code };
+}
+
 export interface QueryBuilder<T = DbRow[]> extends PromiseLike<QueryResult<T>> {
   select: (cols?: string) => QueryBuilder<DbRow[]>;
   insert: (data: any) => QueryBuilder<any>;
@@ -66,7 +80,7 @@ export function createDbClient() {
         }
         return { data: rows, error: null };
       } catch (err: any) {
-        return { data: null, error: { message: err.message || String(err), code: err.code } };
+        return { data: null, error: describeDbError(err) };
       }
     },
 
@@ -221,7 +235,7 @@ export function createDbClient() {
 
           return { data: null as any, error: null };
         } catch (err: any) {
-          return { data: null as any, error: { message: err.message || String(err), code: err.code } };
+          return { data: null as any, error: describeDbError(err) };
         }
       }
 
@@ -351,7 +365,7 @@ export function createDbClient() {
             }
             return { error: null };
           } catch (err: any) {
-            return { error: { message: err.message || String(err) } };
+            return { error: describeDbError(err) };
           }
         },
         listUsers: async () => ({ data: { users: [] as any[] }, error: null }),
