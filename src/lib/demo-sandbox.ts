@@ -21,6 +21,7 @@ export function isDemoMode(): boolean {
   }
   const forced = process.env.NEXT_PUBLIC_DEMO_MODE;
   if (forced === "false") return false;
+  if (forced === "true") return true;
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get("demo") === "true") {
     window.localStorage.setItem(DEMO_FLAG_KEY, "true");

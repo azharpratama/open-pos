@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_DEMO_MODE: process.env.DATABASE_URL ? "false" : "true",
+  },
   async headers() {
     return [
       {

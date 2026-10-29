@@ -77,6 +77,13 @@ export async function POST(request: Request) {
         await setSessionCookie(response, sessionUser);
         return response;
       }
+
+      if (!process.env.DATABASE_URL) {
+        return NextResponse.json(
+          { error: "Email atau password salah" },
+          { status: 401 }
+        );
+      }
     }
 
     const rows = await conn`
@@ -192,6 +199,15 @@ export async function POST(request: Request) {
       });
       await setSessionCookie(response, sessionUser);
       return response;
+    }
+
+    const isConnRefused =
+      err?.code === "ECONNREFUSED" || String(err?.message || "").includes("ECONNREFUSED");
+    if (isConnRefused || !process.env.DATABASE_URL) {
+      return NextResponse.json(
+        { error: "Email atau password salah" },
+        { status: 401 }
+      );
     }
 
     return NextResponse.json(

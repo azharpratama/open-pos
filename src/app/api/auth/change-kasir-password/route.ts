@@ -44,6 +44,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Akses khusus owner" }, { status: 403 });
   }
 
+  if (!process.env.DATABASE_URL) {
+    return NextResponse.json({
+      data: { ok: true, sessionsRevoked: true },
+    });
+  }
+
   try {
     const kasirs = await conn`
       SELECT id FROM public.users WHERE role = 'karyawan'

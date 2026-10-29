@@ -9,11 +9,26 @@ export interface QueryResult<T = DbRow[]> {
   error: { message: string; code?: string } | null;
 }
 
+// A demo deployment intentionally runs without DATABASE_URL, so any request that
+// still reaches a route is a client bug, not a database outage. Say that plainly
+// instead of surfacing the 127.0.0.1 fallback address.
+export const DEMO_DEPLOYMENT_ERROR =
+  "Deployment ini berjalan dalam mode sandbox: data dilayani di browser, bukan lewat API. Muat ulang halaman.";
+
+export function isDemoDeployment(): boolean {
+  return !process.env.DATABASE_URL;
+}
+
 // A stopped local Postgres surfaces as a raw TCP error, which reads like an app
 // bug in the UI. Say what to do instead.
 export function describeDbError(err: any): { message: string; code?: string } {
   const message = err?.message || String(err);
-  if ((err?.code === "ECONNREFUSED" || message.includes("ECONNREFUSED")) && message.includes("5432")) {
+  const refused =
+    (err?.code === "ECONNREFUSED" || message.includes("ECONNREFUSED")) &&
+    message.includes("5432");
+
+  if (refused && process.env.VERCEL) return { message: DEMO_DEPLOYMENT_ERROR, code: err?.code };
+  if (refused) {
     return {
       message:
         "Database lokal belum berjalan di port 5432. Jalankan `brew services start postgresql@18`, atau set DEMO_MODE=true untuk memakai sandbox.",
@@ -51,6 +66,9 @@ export interface QueryBuilder<T = DbRow[]> extends PromiseLike<QueryResult<T>> {
 export function createDbClient() {
   return {
     rpc: async (fnName: string, args: Record<string, any> = {}): Promise<{ data: any; error: any }> => {
+      if (isDemoDeployment()) {
+        return { data: null, error: { message: DEMO_DEPLOYMENT_ERROR } };
+      }
       try {
         if (procedures[fnName]) {
           const data = await procedures[fnName](conn, args);
@@ -97,6 +115,9 @@ export function createDbClient() {
       let isMaybeSingle = false;
 
       async function execute(): Promise<QueryResult<any[]>> {
+        if (isDemoDeployment()) {
+          return { data: null as any, error: { message: DEMO_DEPLOYMENT_ERROR } };
+        }
         try {
           let sql = "";
           const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

@@ -75,8 +75,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except Next internals and static asset files.
+  // Run on everything except Next internals and public files the browser fetches
+  // before a session exists (service worker, manifest, icons).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.json|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
 };
