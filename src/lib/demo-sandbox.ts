@@ -1,5 +1,7 @@
 "use client";
 
+import { currentShift, operationalDateWIB } from "@/lib/format";
+
 /**
  * OpenPOS In-Browser Sandbox (Demo Mode - Option A)
  * Provides 100% client-isolated, ephemeral data storage using localStorage.
@@ -269,6 +271,97 @@ export function resetSandboxData() {
   return initial;
 }
 
+type SandboxData = ReturnType<typeof createInitialSandboxData>;
+
+type ResolvedLine = {
+  productId: string;
+  name: string;
+  qty: number;
+  price: number;
+  subtotal: number;
+  modifier?: string;
+};
+
+// Mirrors create_order_transaction: the unit price comes from the product row,
+// never from the client, and stock is validated before anything is written.
+function resolveOrderLines(
+  data: SandboxData,
+  raw: unknown,
+): { value: ResolvedLine[] } | { error: string } {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { error: "Pesanan minimal berisi satu item" };
+  }
+
+  const lines: ResolvedLine[] = [];
+  const requestedQty = new Map<string, number>();
+
+  for (const item of raw as { productId?: string; qty?: number; modifier?: string }[]) {
+    const product = data.products.find((p) => p.id === item.productId);
+    if (!product) return { error: "Produk tidak ditemukan" };
+
+    const qty = Number(item.qty ?? 0);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return { error: "Jumlah item tidak valid" };
+    }
+
+    const totalQty = (requestedQty.get(product.id) ?? 0) + qty;
+    requestedQty.set(product.id, totalQty);
+    if (product.stock_qty !== null && totalQty > product.stock_qty) {
+      return { error: `Stok ${product.name} tidak cukup` };
+    }
+
+    const price = Number(product.price ?? 0);
+    lines.push({
+      productId: product.id,
+      name: product.name,
+      qty,
+      price,
+      subtotal: price * qty,
+      modifier: item.modifier,
+    });
+  }
+
+  return { value: lines };
+}
+
+function decrementStock(data: SandboxData, productId: string, qty: number) {
+  const product = data.products.find((p) => p.id === productId);
+  if (!product || product.stock_qty === null) return;
+  product.stock_qty = Number((product.stock_qty - qty).toFixed(3));
+}
+
+type RecipeLine = {
+  ingredientId: string;
+  ingredientName: string;
+  unitType: string;
+  quantity: number;
+};
+
+// Resolves a menu item's recipe against the ingredient rows, so the recipe
+// editor reads back the names and units it saved.
+function resolveRecipe(data: SandboxData, raw: unknown): RecipeLine[] {
+  if (!Array.isArray(raw)) return [];
+
+  const lines: RecipeLine[] = [];
+  for (const item of raw as { ingredientId?: string; quantity?: number }[]) {
+    const ingredient = data.products.find(
+      (p) => p.id === item.ingredientId && p.category_type === "Bahan Baku",
+    );
+    if (!ingredient) continue;
+
+    const quantity = Number(item.quantity ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+    lines.push({
+      ingredientId: ingredient.id,
+      ingredientName: ingredient.name,
+      unitType: ingredient.unit_type,
+      quantity,
+    });
+  }
+  return lines;
+}
+
 
 function base64UrlEncode(str: string): string {
   if (typeof btoa !== "undefined") {
@@ -410,7 +503,7 @@ export async function handleDemoRequest(
           category: p.category,
           price: p.price,
           imageUrl: p.image_url,
-          ingredientCount: 2,
+          ingredientCount: (((p as any).ingredients ?? []) as RecipeLine[]).length,
         }));
       return jsonOk({ data: items });
     }
@@ -427,9 +520,11 @@ export async function handleDemoRequest(
         stock_qty: 100,
         image_url: body.imageUrl || null,
       };
+      const recipe = resolveRecipe(data, body.ingredients);
+      (newItem as any).ingredients = recipe;
       data.products.push(newItem);
       saveSandboxData(data);
-      return jsonOk({ data: { ...newItem, ingredientCount: body.ingredients?.length || 0 } }, 201);
+      return jsonOk({ data: { ...newItem, ingredientCount: recipe.length } }, 201);
     }
   }
 
@@ -447,9 +542,7 @@ export async function handleDemoRequest(
           category: prod.category,
           price: prod.price,
           imageUrl: prod.image_url,
-          ingredients: [
-            { ingredientId: "b-1", ingredientName: "Biji Kopi Arabika", unitType: "kg", quantity: 0.015 },
-          ],
+          ingredients: ((prod as any).ingredients ?? []) as RecipeLine[],
         },
       });
     }
@@ -460,8 +553,12 @@ export async function handleDemoRequest(
       if (body.category) prod.category = body.category;
       if (body.price !== undefined) prod.price = Number(body.price);
       if (body.imageUrl !== undefined) prod.image_url = body.imageUrl;
+      if (body.ingredients !== undefined) {
+        (prod as any).ingredients = resolveRecipe(data, body.ingredients);
+      }
+      const recipe = ((prod as any).ingredients ?? []) as RecipeLine[];
       saveSandboxData(data);
-      return jsonOk({ data: { ...prod, imageUrl: prod.image_url, ingredientCount: 1 } });
+      return jsonOk({ data: { ...prod, imageUrl: prod.image_url, ingredientCount: recipe.length } });
     }
 
     if (method === "DELETE") {
@@ -508,41 +605,51 @@ export async function handleDemoRequest(
   // Orders: POST (Create Order)
   if (path === "/api/orders" && method === "POST") {
     const body = options?.body ? JSON.parse(options.body as string) : {};
-    const refNum = 100 + data.orders.length + 1;
-    const orderRef = `DEMO-${refNum}`;
-    const items = body.items || [];
-    const subtotal = items.reduce((acc: number, it: any) => acc + (it.price || 0) * (it.qty || 1), 0);
+    const lines = resolveOrderLines(data, body.items);
+    if ("error" in lines) return jsonErr(lines.error, 400);
+
+    const subtotal = lines.value.reduce((acc, it) => acc + it.subtotal, 0);
     const discount = Number(body.discount || 0);
     const total = Math.max(0, subtotal - discount);
+    const orderRef =
+      typeof body.orderRef === "string" && body.orderRef
+        ? body.orderRef
+        : `DEMO-${100 + data.orders.length + 1}`;
+
+    if (data.orders.some((o) => o.order_ref === orderRef)) {
+      return jsonErr("Nomor pesanan sudah dipakai", 409);
+    }
 
     const newOrder = {
       id: `demo-ord-${Date.now()}`,
       order_ref: orderRef,
       customer_name: body.customerName || "Pelanggan",
-      cashier_name: body.cashier || "Kasir Pagi",
+      cashier_name: body.cashierName || data.shift.cashier_name || "Kasir",
       order_type: body.orderType || "DINE_IN",
-      table_number: body.tableNumber || null,
+      table_number: body.tableNumber ?? null,
+      note: body.note || null,
       order_status: "ANTRIAN",
       payment_method: body.paymentMethod || "TUNAI",
       payment_status: body.isOpenBill ? "PENDING" : "SUCCESS",
       subtotal,
       discount,
       total_amount: total,
-      amount_paid: body.amountPaid || total,
+      amount_paid: body.amountPaid ?? total,
       change_amount: body.changeAmount || 0,
       is_open_bill: Boolean(body.isOpenBill),
       reservation_id: body.reservationId || null,
       created_at: new Date().toISOString(),
-      items: items.map((it: any, idx: number) => ({
+      items: lines.value.map((it, idx) => ({
         id: `item-${Date.now()}-${idx}`,
         name: it.name,
         qty: it.qty,
         price: it.price,
-        subtotal: it.price * it.qty,
-        modifier: it.modifier || undefined,
+        subtotal: it.subtotal,
+        modifier: it.modifier,
       })),
     };
 
+    lines.value.forEach((it) => decrementStock(data, it.productId, it.qty));
     data.orders.unshift(newOrder);
     saveSandboxData(data);
     return jsonOk({ data: { orderRef, id: newOrder.id } }, 201);
@@ -595,15 +702,19 @@ export async function handleDemoRequest(
     const order = data.orders.find((o) => o.order_ref === ref);
     if (!order) return jsonErr("Pesanan tidak ditemukan", 404);
 
-    const newItems = (body.items || []).map((it: any, idx: number) => ({
+    const lines = resolveOrderLines(data, body.items);
+    if ("error" in lines) return jsonErr(lines.error, 400);
+
+    const newItems = lines.value.map((it, idx) => ({
       id: `item-${Date.now()}-${idx}`,
       name: it.name,
       qty: it.qty,
       price: it.price,
-      subtotal: it.price * it.qty,
-      modifier: it.modifier || undefined,
+      subtotal: it.subtotal,
+      modifier: it.modifier,
     }));
 
+    lines.value.forEach((it) => decrementStock(data, it.productId, it.qty));
     order.items.push(...newItems);
     order.subtotal = order.items.reduce((acc, it) => acc + it.subtotal, 0);
     order.total_amount = Math.max(0, order.subtotal - (order.discount || 0));
@@ -690,15 +801,27 @@ export async function handleDemoRequest(
     });
   }
 
-  // Current Shift: GET
+  // Current Shift: GET (mirrors the server contract: date, window, roster)
   if (path === "/api/current-shift" && method === "GET") {
+    const activeShift = currentShift();
+    const rosterEntries = activeShift
+      ? data.employees.filter((emp) =>
+          data.shiftSchedules.some(
+            (s) =>
+              s.workDate === operationalDateWIB() &&
+              s.shiftType === activeShift.type &&
+              s.employeeIds.includes(emp.id),
+          ),
+        )
+      : [];
+
     return jsonOk({
       data: {
-        id: data.shift.id,
-        shift_type: data.shift.shift_type,
-        cashier_name: data.shift.cashier_name,
-        opened_at: data.shift.opened_at,
-        initial_cash: data.shift.initial_cash,
+        date: operationalDateWIB(),
+        shiftType: activeShift?.type ?? null,
+        startTime: activeShift?.start ?? null,
+        endTime: activeShift?.end ?? null,
+        cashiers: rosterEntries.length > 0 ? rosterEntries.map((e) => e.name) : [],
       },
     });
   }
@@ -706,12 +829,18 @@ export async function handleDemoRequest(
   // Shifts: POST (Open shift) & PATCH (Close shift)
   if (path === "/api/shifts") {
     if (method === "POST") {
+      const body = options?.body ? JSON.parse(options.body as string) : {};
       data.shift.opened_at = now;
+      if (body.cashierName) data.shift.cashier_name = body.cashierName;
+      if (body.shiftType) data.shift.shift_type = body.shiftType;
+      if (body.initialCash !== undefined) data.shift.initial_cash = Number(body.initialCash);
       saveSandboxData(data);
       return jsonOk({ id: data.shift.id, openedAt: now });
     }
     if (method === "PATCH") {
-      return jsonOk({ revenue: 770000 });
+      const paidOrders = data.orders.filter((o) => o.payment_status === "SUCCESS");
+      const revenue = paidOrders.reduce((acc, o) => acc + o.total_amount, 0);
+      return jsonOk({ revenue });
     }
   }
 
@@ -756,7 +885,12 @@ export async function handleDemoRequest(
   // Shift Schedules: GET & POST
   if (path === "/api/shift-schedules") {
     if (method === "GET") {
-      return jsonOk({ data: data.shiftSchedules });
+      const from = url.searchParams.get("from");
+      const to = url.searchParams.get("to");
+      const slots = data.shiftSchedules.filter(
+        (s) => (!from || s.workDate >= from) && (!to || s.workDate <= to),
+      );
+      return jsonOk({ data: slots });
     }
     if (method === "POST") {
       const body = options?.body ? JSON.parse(options.body as string) : {};
@@ -1236,7 +1370,9 @@ export async function handleDemoRequest(
     return jsonOk({ success: true, message: "Demo datasets reset" });
   }
 
-  // Fallback
+  // Fallback: an unmatched route is a gap in this sandbox, not an empty result.
+  // Keep the empty payload so a page still renders, but make the gap visible.
+  console.warn(`[OpenPOS Sandbox] Unhandled ${method} ${path} — returning empty data`);
   return jsonOk({ data: [] });
 }
 

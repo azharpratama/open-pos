@@ -166,11 +166,11 @@ describe("demo-sandbox engine", () => {
         method: "POST",
         body: JSON.stringify({
           customerName: "Tes Demo",
-          cashier: "Kasir Pagi",
+          cashierName: "Kasir Pagi",
           orderType: "DINE_IN",
           tableNumber: "12",
           isOpenBill: true,
-          items: [{ name: "Kopi Susu Aren", qty: 2, price: 18000 }],
+          items: [{ productId: "p-1", qty: 2 }],
         }),
       });
       expect(createRes!.status).toBe(201);
@@ -190,7 +190,7 @@ describe("demo-sandbox engine", () => {
       const addRes = await handleDemoRequest(`/api/orders/${orderRef}/items`, {
         method: "POST",
         body: JSON.stringify({
-          items: [{ name: "Kentang Goreng", qty: 1, price: 16000 }],
+          items: [{ productId: "p-9", qty: 1 }],
         }),
       });
       const addJson = await addRes!.json();
@@ -449,6 +449,127 @@ describe("demo-sandbox engine", () => {
   describe("setupDemoInterceptor", () => {
     it("installs window.fetch interceptor without throwing", () => {
       expect(() => setupDemoInterceptor()).not.toThrow();
+    });
+  });
+
+  describe("order creation contract", () => {
+    it("prices items from the product row and stores the real cashier", async () => {
+      const res = await handleDemoRequest("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          orderRef: "TRX-TEST-1",
+          cashierName: "Sinta",
+          customerName: "Rina",
+          orderType: "TAKEAWAY",
+          paymentMethod: "TUNAI",
+          amountPaid: 50000,
+          changeAmount: 14000,
+          items: [
+            { productId: "p-1", qty: 2 },
+            { productId: "p-5", qty: 1 },
+          ],
+        }),
+      });
+      expect(res!.status).toBe(201);
+
+      const list = await handleDemoRequest("/api/orders", { method: "GET" });
+      const { data } = await list!.json();
+      const order = data.find((o: any) => o.id === "TRX-TEST-1");
+
+      expect(order.cashier).toBe("Sinta");
+      expect(order.subtotal).toBe(48000); // 2 × 18.000 + 12.000
+      expect(order.total).toBe(48000);
+      expect(order.items.map((i: any) => i.name)).toEqual(["Kopi Susu Aren", "Lemon Tea"]);
+      expect(order.items[0].subtotal).toBe(36000);
+    });
+
+    it("rejects an order that exceeds available stock", async () => {
+      const res = await handleDemoRequest("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({ items: [{ productId: "p-10", qty: 999 }] }),
+      });
+      expect(res!.status).toBe(400);
+    });
+
+    it("decrements stock and rejects unknown products", async () => {
+      const before = getSandboxData().products.find((p) => p.id === "p-2")!.stock_qty;
+      await handleDemoRequest("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({ items: [{ productId: "p-2", qty: 3 }] }),
+      });
+      expect(getSandboxData().products.find((p) => p.id === "p-2")!.stock_qty).toBe(before - 3);
+
+      const bad = await handleDemoRequest("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({ items: [{ productId: "nope", qty: 1 }] }),
+      });
+      expect(bad!.status).toBe(400);
+    });
+
+    it("computes the shift revenue from paid orders on close", async () => {
+      const revRes = await handleDemoRequest("/api/shifts/revenue", { method: "GET" });
+      const { total } = await revRes!.json();
+      const closeRes = await handleDemoRequest("/api/shifts", { method: "PATCH" });
+      const { revenue } = await closeRes!.json();
+      expect(revenue).toBe(total);
+    });
+  });
+
+  describe("menu recipe roundtrip", () => {    it("persists ingredients and exposes them on the detail endpoint", async () => {
+      const createRes = await handleDemoRequest("/api/menu-items", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "Kopi Pandan",
+          category: "Kopi",
+          price: 21000,
+          imageUrl: null,
+          ingredients: [
+            { ingredientId: "b-1", quantity: 0.02 },
+            { ingredientId: "b-2", quantity: 0.15 },
+            { ingredientId: "missing", quantity: 1 },
+          ],
+        }),
+      });
+      const { data: created } = await createRes!.json();
+      expect(created.ingredientCount).toBe(2);
+
+      const detailRes = await handleDemoRequest(`/api/menu-items/${created.id}`, { method: "GET" });
+      const { data: detail } = await detailRes!.json();
+      expect(detail.ingredients).toHaveLength(2);
+      expect(detail.ingredients[0]).toMatchObject({
+        ingredientId: "b-1",
+        ingredientName: "Biji Kopi Arabika",
+        unitType: "kg",
+        quantity: 0.02,
+      });
+    });
+  });
+
+  describe("current shift contract", () => {
+    it("returns the same shape as the server route", async () => {
+      const res = await handleDemoRequest("/api/current-shift", { method: "GET" });
+      const { data } = await res!.json();
+      expect(Object.keys(data).sort()).toEqual(
+        ["cashiers", "date", "endTime", "shiftType", "startTime"].sort(),
+      );
+      expect(Array.isArray(data.cashiers)).toBe(true);
+      if (data.shiftType) {
+        expect(["SIANG", "MALAM"]).toContain(data.shiftType);
+        expect(data.cashiers.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("filters shift schedules by the requested range", async () => {
+      const wide = await handleDemoRequest(
+        "/api/shift-schedules?from=2000-01-01&to=2100-01-01",
+        { method: "GET" },
+      );
+      const narrow = await handleDemoRequest(
+        "/api/shift-schedules?from=2000-01-01&to=2000-01-02",
+        { method: "GET" },
+      );
+      expect((await wide!.json()).data.length).toBeGreaterThan(0);
+      expect((await narrow!.json()).data).toHaveLength(0);
     });
   });
 });
